@@ -43,7 +43,7 @@ namespace HospitalDomainLib
                     int currentChunkSize = Math.Min(chunkSize, buffer.Length - i);
                     await stream.WriteAsync(buffer.AsMemory(i, currentChunkSize));
 
-                    // Задержка для имитации медленной записи
+                    // Задержка для имитации медленной записи (3-5 секунд в сумме)
                     await Task.Delay(100);
 
                     if (chunkSize > 0 && i % (chunkSize * 10) == 0)
@@ -53,7 +53,6 @@ namespace HospitalDomainLib
                     }
                 }
 
-                // Важно: сбрасываем буфер
                 await stream.FlushAsync();
                 progress?.Report($"Поток {Thread.CurrentThread.ManagedThreadId}: Запись в поток завершена");
             }
@@ -81,7 +80,7 @@ namespace HospitalDomainLib
                 await Task.Delay(50);
             }
 
-            stream.Position = 0; // Возвращаемся в начало потока
+            stream.Position = 0;
 
             using (var fileStream = new FileStream(fileName, FileMode.Create, FileAccess.Write))
             {
@@ -91,6 +90,7 @@ namespace HospitalDomainLib
                 while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                 {
                     await fileStream.WriteAsync(buffer, 0, bytesRead);
+                    await Task.Delay(50);
                 }
             }
 

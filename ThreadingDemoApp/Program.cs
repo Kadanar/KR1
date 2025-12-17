@@ -13,16 +13,16 @@ namespace ThreadingDemoApp
         static async Task Main(string[] args)
         {
             Console.WriteLine("=== ЗАДАНИЕ 1.1 ===");
-            await Task1_1();
+            await Task.Run(() => Task1_1());
 
             Console.WriteLine("\n=== ЗАДАНИЕ 1.2 и 1.3 ===");
-            await Task1_2_1_3();
+            Task1_2_1_3(); // Синхронный метод
 
             Console.WriteLine("\nНажмите любую клавишу для выхода...");
             Console.ReadKey();
         }
 
-        static async Task Task1_1()
+        static void Task1_1()
         {
             // Часть 4: Запуск в отдельном потоке
             Console.WriteLine("--- Запуск в отдельном потоке ---");
@@ -33,113 +33,133 @@ namespace ThreadingDemoApp
                 Console.WriteLine($"Поток {threadId}: Прогресс: {progress:F2}%");
             };
 
-            // Используем Task.Run для асинхронного выполнения
-            var task1 = Task.Run(async () =>
+            Thread thread1 = new Thread(() =>
             {
                 calculator1.CalculationCompleted += (result, ticks, threadId) =>
                 {
-                    Console.WriteLine($"Поток {threadId}: Завершен с результатом: {result:F6}");
-                    Console.WriteLine($"Поток {threadId}: Время выполнения: {ticks} тиков");
+                    Console.WriteLine($"\nПоток {threadId}: Завершен с результатом: {result:F6}");
+                    Console.WriteLine($"Время выполнения: {ticks} тиков");
                 };
-
-                // Теперь это асинхронный метод
-                await calculator1.CalculateIntegralAsync(1);
+                calculator1.CalculateIntegral(1);
             });
 
-            await task1;
+            thread1.Start();
+            thread1.Join();
 
             // Часть 4: Два потока с разными приоритетами
             Console.WriteLine("\n--- Два потока с разными приоритетами ---");
 
-            var calculatorHigh = new IntegralCalculator();
-            var calculatorLow = new IntegralCalculator();
+            // Использую ОДИН экземпляр для демонстрации приоритетов
+            var calculator = new IntegralCalculator();
 
-            calculatorHigh.ProgressChanged += (progress, threadId) =>
+            long highTicks = 0, lowTicks = 0;
+            double highResult = 0, lowResult = 0;
+            int highThreadId = 0, lowThreadId = 0;
+
+            calculator.ProgressChanged += (progress, threadId) =>
             {
-                Console.WriteLine($"Поток HIGH ({threadId}): Прогресс: {progress:F2}%");
+                if (threadId == 2)
+                    Console.WriteLine($"Поток HIGH приоритета: Прогресс: {progress:F2}%");
+                else if (threadId == 3)
+                    Console.WriteLine($"Поток LOW приоритета: Прогресс: {progress:F2}%");
             };
 
-            calculatorLow.ProgressChanged += (progress, threadId) =>
+            Thread threadHigh = new Thread(() =>
             {
-                Console.WriteLine($"Поток LOW ({threadId}): Прогресс: {progress:F2}%");
-            };
-
-            // Создаем задачи вместо потоков для более современного подхода
-            var highPriorityTask = Task.Run(async () =>
-            {
-                calculatorHigh.CalculationCompleted += (result, ticks, threadId) =>
+                calculator.CalculationCompleted += (result, ticks, threadId) =>
                 {
-                    Console.WriteLine($"Поток HIGH приоритета {threadId}: Результат = {result:F6}, Время = {ticks} тиков");
+                    highResult = result;
+                    highTicks = ticks;
+                    highThreadId = threadId;
                 };
-                await calculatorHigh.CalculateIntegralAsync(2);
+                calculator.CalculateIntegral(2);
             });
 
-            var lowPriorityTask = Task.Run(async () =>
+            Thread threadLow = new Thread(() =>
             {
-                calculatorLow.CalculationCompleted += (result, ticks, threadId) =>
+                calculator.CalculationCompleted += (result, ticks, threadId) =>
                 {
-                    Console.WriteLine($"Поток LOW приоритета {threadId}: Результат = {result:F6}, Время = {ticks} тиков");
+                    lowResult = result;
+                    lowTicks = ticks;
+                    lowThreadId = threadId;
                 };
-                await calculatorLow.CalculateIntegralAsync(3);
+                calculator.CalculateIntegral(3);
             });
 
-            await Task.WhenAll(highPriorityTask, lowPriorityTask);
+            threadHigh.Priority = ThreadPriority.Highest;
+            threadLow.Priority = ThreadPriority.Lowest;
 
-            // Часть 5: Только один поток из 5 (с lock)
+            threadHigh.Start();
+            threadLow.Start();
+
+            threadHigh.Join();
+            threadLow.Join();
+
+            Console.WriteLine($"\nПоток HIGH приоритета {highThreadId}: Результат = {highResult:F6}, Время = {highTicks} тиков");
+            Console.WriteLine($"Поток LOW приоритета {lowThreadId}: Результат = {lowResult:F6}, Время = {lowTicks} тиков");
+
+            // Часть 5: Только один поток из 5
             Console.WriteLine("\n--- Только один поток из 5 (с lock) ---");
 
             var calculatorLock = new IntegralCalculator();
-            var lockTasks = new List<Task>();
+            List<Thread> threads = new List<Thread>();
 
             for (int i = 0; i < 5; i++)
             {
                 int threadNum = i + 1;
-                var task = Task.Run(async () =>
+                Thread t = new Thread(() =>
                 {
                     Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId} начал выполнение");
-
-                    // Асинхронная версия с lock
-                    await Task.Run(() =>
-                    {
-                        calculatorLock.CalculateIntegralWithLock(threadNum);
-                    });
-
+                    calculatorLock.CalculateIntegralWithLock(threadNum);
                     Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId} завершил выполнение");
                 });
-
-                lockTasks.Add(task);
-                await Task.Delay(10); // Небольшая задержка между запусками
+                threads.Add(t);
             }
 
-            await Task.WhenAll(lockTasks);
+            foreach (var thread in threads)
+            {
+                thread.Start();
+                Thread.Sleep(10);
+            }
+
+            foreach (var thread in threads)
+            {
+                thread.Join();
+            }
 
             // Часть 6: Семафор - ограниченное количество потоков
             Console.WriteLine("\n--- Семафор: только 2 потока из 5 ---");
 
             var calculatorSemaphore = new IntegralCalculator();
-            var semaphoreTasks = new List<Task>();
+            threads.Clear();
 
             for (int i = 0; i < 5; i++)
             {
                 int threadNum = i + 1;
-                var task = Task.Run(async () =>
+                Thread t = new Thread(() =>
                 {
-                    await Task.Run(() =>
-                    {
-                        calculatorSemaphore.CalculateIntegralWithSemaphore(2, threadNum);
-                    });
+                    Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId} ожидает семафор...");
+                    calculatorSemaphore.CalculateIntegralWithSemaphore(2, threadNum);
+                    Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId} завершил выполнение");
                 });
-
-                semaphoreTasks.Add(task);
-                await Task.Delay(50); // Задержка между запуском задач
+                threads.Add(t);
             }
 
-            await Task.WhenAll(semaphoreTasks);
+            foreach (var thread in threads)
+            {
+                thread.Start();
+                Thread.Sleep(50);
+            }
+
+            foreach (var thread in threads)
+            {
+                thread.Join();
+            }
         }
 
-        static async Task Task1_2_1_3()
+        static void Task1_2_1_3()
         {
-            // Создаем коллекцию из 1000 пациентов
+            // Создаю коллекцию из 1000 пациентов
             var patients = new List<Patient>();
             var diagnoses = new[] { "Грипп", "Пневмония", "Гипертония", "Диабет", "Астма", "Мигрень" };
             var random = new Random();
@@ -150,50 +170,57 @@ namespace ThreadingDemoApp
                 int age = random.Next(18, 90);
                 string diagnosis = diagnoses[random.Next(diagnoses.Length)];
                 patients.Add(new Patient(i + 1, name, age, diagnosis));
-
-                // Добавляем небольшую асинхронную задержку
-                if (i % 100 == 0)
-                    await Task.Yield();
             }
 
             Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId}: Начало работы");
 
-            // Создаем сервис
+            // Создаю сервис
             var streamService = new StreamService<Patient>();
             var progress = new Progress<string>(message => Console.WriteLine($"# {message}"));
 
-            // Используем MemoryStream
+            // Использую MemoryStream
             using (var memoryStream = new MemoryStream())
             {
-                // Синхронный запуск методов 1 и 2
+                //синхронный запуск методов 1 и 2
                 Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId}: Запуск потоков 1 и 2");
 
+                // Метод 1: Запись в поток (синхронный запуск через Task.Run)
                 var task1 = Task.Run(() => streamService.WriteToStreamAsync(memoryStream, patients, progress));
-                await Task.Delay(500); // Увеличиваем задержку до 500 мс
+
+                // Задержка 100-200 мс между запусками (СИНХРОННАЯ)
+                Thread.Sleep(200);
+
+                // Метод 2: Копирование из потока в файл (синхронный запуск через Task.Run)
                 var task2 = Task.Run(() => streamService.CopyFromStreamAsync(memoryStream, "patients.json", progress));
 
-                // Ожидаем завершения
-                await Task.WhenAll(task1, task2);
+                //ожидание завершения
+                Console.WriteLine($"\nПоток {Thread.CurrentThread.ManagedThreadId}: Ожидание завершения методов 1 и 2...");
 
-                Console.WriteLine($"\nПоток {Thread.CurrentThread.ManagedThreadId}: Потоки 1 и 2 завершены");
+                task1.Wait(); // Синхронное ожидание
+                task2.Wait(); // Синхронное ожидание
 
-                // Проверяем размер файла
+                Console.WriteLine($"Поток {Thread.CurrentThread.ManagedThreadId}: Потоки 1 и 2 завершены");
+
+                // Проверяю размер файла
                 var fileInfo = new FileInfo("patients.json");
                 Console.WriteLine($"Размер файла patients.json: {fileInfo.Length} байт");
 
-                // Получаем статистику асинхронно
-                int countPneumonia = await streamService.GetStatisticsAsync("patients.json",
-                    p => p.Diagnosis == "Пневмония");
+                // Получаю статистику асинхронно
+                Console.WriteLine($"\nПоток {Thread.CurrentThread.ManagedThreadId}: Получение статистики...");
 
-                Console.WriteLine($"\nСтатистика: {countPneumonia} пациентов с диагнозом 'Пневмония'");
+                // Использую GetAwaiter().GetResult() для синхронного получения результата
+                int countPneumonia = streamService.GetStatisticsAsync("patients.json",
+                    p => p.Diagnosis == "Пневмония").GetAwaiter().GetResult();
+
+                Console.WriteLine($"Статистика: {countPneumonia} пациентов с диагнозом 'Пневмония'");
 
                 // Дополнительная статистика для демонстрации
-                int countFlu = await streamService.GetStatisticsAsync("patients.json",
-                    p => p.Diagnosis == "Грипп");
+                int countFlu = streamService.GetStatisticsAsync("patients.json",
+                    p => p.Diagnosis == "Грипп").GetAwaiter().GetResult();
                 Console.WriteLine($"Статистика: {countFlu} пациентов с диагнозом 'Грипп'");
 
-                int countHypertension = await streamService.GetStatisticsAsync("patients.json",
-                    p => p.Diagnosis == "Гипертония");
+                int countHypertension = streamService.GetStatisticsAsync("patients.json",
+                    p => p.Diagnosis == "Гипертония").GetAwaiter().GetResult();
                 Console.WriteLine($"Статистика: {countHypertension} пациентов с диагнозом 'Гипертония'");
             }
         }
